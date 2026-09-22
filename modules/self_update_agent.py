@@ -1,0 +1,133 @@
+import json
+
+
+class SelfUpdateMixin:
+
+    def init_self_update(self):
+        device_cfg = self.config.get("device", {}) or {}
+        self._self_update_interval = float(device_cfg.get("self_update_check_interval", 300))
+        self._self_update_allow_install = bool(device_cfg.get("self_update_allow_install", True))
+        self._self_update_installing = False
+        self._self_update_last_state = None
+
+    def register_self_update(self):
+        base = f"{self.base_topic}/self_update"
+        command_topic = f"{base}/set" if self._self_update_allow_install else None
+
+        self._update_discovery(
+            "self_update",
+            "TuxD-Win Agent Update",
+            f"{base}/state",
+            command_topic=command_topic,
+            icon="mdi:microsoft-windows",
+            entity_category="diagnostic",
+        )
+
+        self._button_discovery(
+            "self_update_check",
+            "Check for TuxD-Win Agent Updates",
+            f"{base}/check/set",
+            icon="mdi:cloud-refresh",
+            entity_category="diagnostic",
+        )
+
+        if not self._self_update_installing and self._self_update_last_state is None:
+            self.publish(
+                f"{base}/state",
+                json.dumps({
+                    "installed_version": self.version,
+                    "latest_version": self.version,
+                    "title": "TuxD-Win Agent",
+                    "in_progress": False,
+                }),
+                retain=True,
+            )
+
+    def _self_update_check(self, force=False):
+        if not callable(self._update_checker):
+            return None, None, None, None
+        try:
+            return self._update_checker(force=force)
+        except Exception:
+            return None, None, None, None
+
+    def _publish_self_update_state(self, force=False):
+        base = f"{self.base_topic}/self_update"
+        new_version, src_type, src_val, release_notes = self._self_update_check(force=force)
+        state = {
+            "installed_version": self.version,
+            "latest_version": new_version or self.version,
+            "title": "TuxD-Win Agent",
+            "in_progress": self._self_update_installing,
+        }
+        if release_notes:
+            state["release_summary"] = release_notes
+        state["release_url"] = "https://github.com/hen-io/TuxD-Win/releases"
+        self._self_update_last_state = dict(state)
+        self.publish(f"{base}/state", json.dumps(state), retain=True)
+        return new_version, src_type, src_val
+
+    def _set_self_update_progress(self, in_progress):
+        if not self._self_update_last_state:
+            return
+        state = dict(self._self_update_last_state)
+        state["in_progress"] = in_progress
+        self.publish(f"{self.base_topic}/self_update/state", json.dumps(state), retain=True)
+
+    def handle_self_update_check(self):
+        import threading
+        threading.Thread(target=lambda: self._publish_self_update_state(force=True), daemon=True).start()
+
+    def self_update_loop(self):
+        while not self._stop_event.is_set():
+            try:
+                self._publish_self_update_state()
+            except Exception:
+                pass
+            self._stop_event.wait(timeout=self._self_update_interval)
+
+    def handle_self_update_install(self):
+        if not self._self_update_allow_install or self._self_update_installing:
+            return
+        if not callable(self._update_applier):
+            return
+
+        self._self_update_installing = True
+        import threading
+        threading.Thread(target=self._run_self_update_install, daemon=True).start()
+
+    def _run_self_update_install(self):
+        try:
+            new_version, src_type, src_val = self._publish_self_update_state(force=True)
+            if not new_version or not src_type or not src_val:
+                return
+            self._set_self_update_progress(True)
+            print(f"TuxD-Win: installing update {new_version}, restarting...")
+            self._update_applier(new_version, src_type, src_val)
+        except Exception:
+            self._set_self_update_progress(False)
+        finally:
+            self._self_update_installing = False
+
+    def handle_self_update_install_from_url(self, url):
+        if not self._self_update_allow_install or self._self_update_installing:
+            return
+        if not callable(self._update_applier):
+            return
+        url = (url or "").strip()
+        if not url:
+            return
+
+        self._self_update_installing = True
+        import threading
+        threading.Thread(target=self._run_self_update_install_from_url, args=(url,), daemon=True).start()
+
+    def _run_self_update_install_from_url(self, url):
+        try:
+            self._set_self_update_progress(True)
+            print(f"TuxD-Win: installing update from {url}, restarting...")
+            self._update_applier("offline-tarball", "url", url)
+        except Exception:
+            self._set_self_update_progress(False)
+        finally:
+            self._self_update_installing = False
