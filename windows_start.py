@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -48,6 +49,59 @@ def _selftest():
 
 if __name__ == "__main__" and "--selftest" in sys.argv:
     sys.exit(_selftest())
+
+
+
+_FAST_EXIT_SECONDS = 5.0
+_RESTART_DELAY = 2.0
+_MAX_BACKOFF = 30.0
+_SUPERVISOR_PID_ARG = "--supervisor-pid="
+
+
+def _child_command():
+    return [sys.executable, str(Path(__file__).resolve()), "--child", f"{_SUPERVISOR_PID_ARG}{os.getpid()}"]
+
+
+def _supervise():
+    print(f"TuxD-Win supervisor {VERSION}: started (pid {os.getpid()})", flush=True)
+    fast_exits = 0
+    child = None
+    try:
+        while True:
+            started = time.monotonic()
+            code = "not started"
+            try:
+                child = subprocess.Popen(_child_command())
+                while True:
+                    try:
+                        code = child.wait(timeout=1.0)
+                        break
+                    except subprocess.TimeoutExpired:
+                        pass
+            except OSError as e:
+                code = repr(e)
+            child = None
+
+            ran = time.monotonic() - started
+            if ran < _FAST_EXIT_SECONDS:
+                fast_exits = min(fast_exits + 1, 10)
+                delay = min(_MAX_BACKOFF, 5.0 * 2 ** (fast_exits - 1))
+            else:
+                fast_exits = 0
+                delay = _RESTART_DELAY
+            print(f"TuxD-Win supervisor: agent exited ({code}) after {ran:.0f}s, restarting in {delay:.0f}s", flush=True)
+            time.sleep(delay)
+    except KeyboardInterrupt:
+        if child is not None:
+            try:
+                child.wait(timeout=10)
+            except Exception:
+                child.terminate()
+        return 0
+
+
+if __name__ == "__main__" and "--child" not in sys.argv:
+    sys.exit(_supervise())
 
 import yaml
 
@@ -332,7 +386,7 @@ def apply_update(new_version, source_type, source_value):
         if saved_conf is not None:
             conf_path.write_bytes(saved_conf)
 
-    print(f"TuxD-Win: updated to {new_version}, exiting for the Scheduled Task to restart into the new version...")
+    print(f"TuxD-Win: updated to {new_version}, exiting for the supervisor to restart into the new version...")
     time.sleep(1.0)
     os._exit(1)
 
@@ -348,7 +402,38 @@ def load_config():
         return yaml.safe_load(f) or {}
 
 
+def _watch_supervisor(pid, interval=5.0):
+    import psutil
+
+    try:
+        parent = psutil.Process(pid)
+    except psutil.NoSuchProcess:
+        os._exit(0)
+    except Exception:
+        return
+
+    def loop():
+        while True:
+            time.sleep(interval)
+            try:
+                alive = parent.is_running()
+            except Exception:
+                continue
+            if not alive:
+                print("TuxD-Win: supervisor is gone, exiting", flush=True)
+                os._exit(0)
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def main():
+    for arg in sys.argv[1:]:
+        if arg.startswith(_SUPERVISOR_PID_ARG):
+            try:
+                _watch_supervisor(int(arg[len(_SUPERVISOR_PID_ARG):]))
+            except ValueError:
+                pass
+
     config = load_config()
     if not (config.get("device") or {}).get("name"):
         raise SystemExit("TuxD-Win: device.name must be set in tuxd-win.conf")

@@ -8,9 +8,12 @@ _UPDATE_CHECK_SCRIPT = (
     "try { "
     "$s = New-Object -ComObject Microsoft.Update.Session; "
     "$r = $s.CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0'); "
-    "Write-Output $r.Updates.Count "
+    "Write-Output $r.Updates.Count; "
+    "foreach ($u in $r.Updates) { Write-Output ($u.Title -replace '[^\\x20-\\x7E]', '?') } "
     "} catch { Write-Output '-1' }"
 )
+
+_MAX_LISTED_UPDATES = 50
 
 
 class HostUpdateMixin:
@@ -20,6 +23,7 @@ class HostUpdateMixin:
         self._host_update_enabled = bool(cfg.get("enabled", True))
         self._host_update_interval = float(cfg.get("check_interval", 3600))
         self._host_update_last_count = None
+        self._host_update_last_titles = []
         self._host_update_checking = False
 
     def register_host_update(self):
@@ -48,17 +52,16 @@ class HostUpdateMixin:
         if self._host_update_last_count is None:
             self._publish_host_update_state(0, in_progress=False)
 
-    def _publish_host_update_state(self, count, in_progress):
-        if count and count > 0:
-            installed, latest = "Up to date", f"{count} update(s) available"
-        else:
-            installed = latest = "Up to date"
+    def _publish_host_update_state(self, count, in_progress, titles=None):
+        count = count if count and count > 0 else 0
         state = {
-            "installed_version": installed,
-            "latest_version": latest,
+            "installed_version": "0",
+            "latest_version": str(count),
             "title": "Windows Updates",
             "in_progress": in_progress,
         }
+        if count and titles:
+            state["release_summary"] = "\n".join(f"- {t}" for t in titles)
         self.publish(f"{self.base_topic}/host_update/state", json.dumps(state), retain=True)
 
     def handle_host_update_check(self):
@@ -68,21 +71,24 @@ class HostUpdateMixin:
         if self._host_update_checking:
             return
         self._host_update_checking = True
-        self._publish_host_update_state(self._host_update_last_count or 0, in_progress=True)
+        self._publish_host_update_state(self._host_update_last_count or 0, in_progress=True, titles=self._host_update_last_titles)
         count = -1
+        titles = []
         try:
             output = run_powershell(_UPDATE_CHECK_SCRIPT, timeout=180)
             lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
             if lines:
-                count = int(lines[-1])
+                count = int(lines[0])
+                titles = lines[1:_MAX_LISTED_UPDATES + 1] if count > 0 else []
         except Exception as e:
             print(f"TuxD-Win: Windows Update check failed: {e!r}")
         finally:
             self._host_update_checking = False
         if count >= 0:
             self._host_update_last_count = count
+            self._host_update_last_titles = titles
             self.publish(f"{self.base_topic}/updates_available", f"{count} new updates")
-        self._publish_host_update_state(max(self._host_update_last_count or 0, 0), in_progress=False)
+        self._publish_host_update_state(max(self._host_update_last_count or 0, 0), in_progress=False, titles=self._host_update_last_titles)
 
     def host_update_loop(self):
         if not self._host_update_enabled:

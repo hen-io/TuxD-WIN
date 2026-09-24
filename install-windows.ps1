@@ -220,13 +220,23 @@ $settings = New-ScheduledTaskSettingsSet `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable
 
-if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+$wasRunning = $false
+$existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+if ($existing) {
+    $wasRunning = ($existing.State -eq 'Running')
     Write-Host "Scheduled Task '$taskName' already exists - replacing its definition (this does not touch tuxd-win.conf)."
+    # Unregistering alone leaves a running instance alive on the old code.
+    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
 }
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
     -Description "TuxD-Win monitoring agent - reports to Home Assistant via TuxD-HA" | Out-Null
+
+if ($wasRunning) {
+    Start-ScheduledTask -TaskName $taskName
+    Write-Host "It was running before - started it again on the new definition."
+}
 
 Write-Host ""
 Write-Host "############################################################"
