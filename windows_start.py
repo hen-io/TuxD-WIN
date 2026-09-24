@@ -1,3 +1,18 @@
+"""TuxD-Win - a "lite" Windows counterpart to TuxD (the Linux agent):
+system metrics, Windows service monitoring, Windows Update detection, and
+self-update from its own GitHub repo, all reported to the same TuxD-HA
+Home Assistant integration over the same connection_mode: direct WebSocket
+protocol. No terminal/live-shell UI (see modules/base_direct.py) - this is
+a monitoring-and-management agent for a Windows host/VM, not a remote
+console.
+
+Requires Python 3.9+ and: pip install websockets pyyaml psutil
+(psutil's win_service_get/win_service_iter are native - no pywin32 needed).
+
+`python windows_start.py --selftest` checks the interpreter, its packages and
+write access to this folder, then exits - install-windows.ps1 runs it as a
+one-shot Scheduled Task under the same account as the real task.
+"""
 
 import json
 import os
@@ -11,24 +26,69 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-import yaml
-
-VERSION = "0.1.0"
-GITHUB_REPO = "hen-io/TuxD-Win"
+VERSION = "0.1.1"
+GITHUB_REPO = "hen-io/TuxD-WIN"
 CONFIG_FILE = "tuxd-win.conf"
+
+
+def _selftest():
+    # Stdlib-only and runs before any third-party import on purpose: the
+    # whole point is to still produce a readable report when one of those
+    # imports is exactly what's broken. "Works from my admin shell" says
+    # nothing about whether SYSTEM can launch this interpreter - a Microsoft
+    # Store / Python install manager python.exe alias, for one, launches
+    # fine interactively but not from Task Scheduler (0x80070780,
+    # ERROR_CANT_ACCESS_FILE) - so the installer runs this under the real
+    # task's account instead of trusting the interpreter it found.
+    import getpass
+    import importlib
+
+    here = Path(__file__).resolve().parent
+    lines = [
+        f"python: {sys.executable} ({sys.version.split()[0]})",
+        f"user: {getpass.getuser()}",
+        f"cwd: {os.getcwd()}",
+    ]
+    ok = True
+    for name in ("websockets", "yaml", "psutil"):
+        try:
+            mod = importlib.import_module(name)
+            lines.append(f"import {name}: ok ({getattr(mod, '__version__', '?')})")
+        except Exception as e:
+            ok = False
+            lines.append(f"import {name}: FAILED ({e!r})")
+
+    lines.append(f"{CONFIG_FILE}: {'found' if (here / CONFIG_FILE).exists() else 'not found yet'}")
+    lines.append("SELFTEST_OK" if ok else "SELFTEST_FAILED")
+    text = "\n".join(lines) + "\n"
+    print(text)
+    try:
+        # Also proves this account can write here - remote config editing
+        # and self-update both replace files in this folder.
+        (here / "selftest.log").write_text(text, encoding="utf-8")
+    except Exception as e:
+        print(f"could not write selftest.log next to windows_start.py: {e!r}")
+        return 1
+    return 0 if ok else 1
+
+
+if __name__ == "__main__" and "--selftest" in sys.argv:
+    sys.exit(_selftest())
+
+import yaml  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from modules.base_direct import HADirectBase
-from modules.restart import RestartMixin
-from modules.config_agent import ConfigAgentMixin
-from modules.self_update_agent import SelfUpdateMixin
-from modules.system_agent import SystemMetricsMixin
-from modules.network_agent import NetworkMixin
-from modules.disks_agent import DisksMixin
-from modules.services_agent import ServicesMixin
-from modules.host_update_agent import HostUpdateMixin
-from modules.shared import entity_object_id
+from modules.base_direct import HADirectBase  # noqa: E402
+from modules.restart import RestartMixin  # noqa: E402
+from modules.config_agent import ConfigAgentMixin  # noqa: E402
+from modules.self_update_agent import SelfUpdateMixin  # noqa: E402
+from modules.system_agent import SystemMetricsMixin  # noqa: E402
+from modules.network_agent import NetworkMixin  # noqa: E402
+from modules.disks_agent import DisksMixin  # noqa: E402
+from modules.services_agent import ServicesMixin  # noqa: E402
+from modules.host_update_agent import HostUpdateMixin  # noqa: E402
+from modules.shared import entity_object_id  # noqa: E402
 
 
 class TuxDWinAgent(
@@ -42,6 +102,11 @@ class TuxDWinAgent(
     HostUpdateMixin,
     HADirectBase,
 ):
+    # Same shape as TuxD's own TuxDAgentMixin(...HAMQTTBase/HADirectBase) in
+    # modules/agent/start.py - every mixin only ever calls the backend
+    # surface HADirectBase provides (publish, base_topic, device_slug,
+    # device_info, _stop_event, _sensor_discovery, ...), so this composes
+    # the same way with a smaller mixin list.
     def __init__(self, config, version, update_checker=None, update_applier=None):
         super().__init__(config, version)
         self._update_checker = update_checker
@@ -53,6 +118,8 @@ class TuxDWinAgent(
         self.init_host_update()
         self.init_self_update()
 
+    # ---- discovery-payload builders - identical to TuxD's start.py, since
+    # every mixin above calls these expecting the exact same shape/defaults.
 
     def _sensor_discovery(self, object_id, name, state_topic, unit=None, icon=None, attributes_topic=None, ha_object_id=None, state_class=None, entity_category=None, device_class=None):
         payload = {
@@ -131,6 +198,7 @@ class TuxDWinAgent(
             payload["entity_category"] = entity_category
         self.publish(self._discovery_topic("button", object_id), json.dumps(payload), retain=True)
 
+    # ---- registration/dispatch
 
     def refresh_discovery(self):
         registrars = (
@@ -185,6 +253,7 @@ class TuxDWinAgent(
             self._stop_event.set()
 
 
+# ============================================================ self-update
 
 def _github_headers():
     headers = {"User-Agent": "TuxD-Win-Updater"}
@@ -200,6 +269,9 @@ def _github_headers():
 
 
 def check_for_update(force=False):
+    # Simpler than TuxD.py's branch-scanning approach (no stable/rc/beta
+    # release channel for this "lite" v1) - just GitHub's real Releases
+    # API, same as misc/install/git-upgrade.sh already uses for TuxD itself.
     try:
         req = urllib.request.Request(
             f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
@@ -245,6 +317,8 @@ def _safe_extract(archive_path: Path, dest_dir: Path):
         try:
             t.extractall(dest_dir, filter="data")
         except TypeError:
+            # See TuxD/TuxD.py's _extract_tar for why this fallback can't
+            # be a bare extractall() on older Python without PEP 706.
             dest_real = os.path.realpath(dest_dir)
             safe_members = []
             for member in t.getmembers():
@@ -267,6 +341,13 @@ def _find_release_root(extracted_dir: Path):
 
 
 def apply_update(new_version, source_type, source_value):
+    # Deliberately simple compared to TuxD.py's safe_apply_update_any (no
+    # retry loop, no file-level rollback tracking) - a "lite" agent update
+    # path for a "lite" agent. What it does keep: extraction happens fully
+    # in a temp dir BEFORE anything live is touched (a failed download/
+    # extract leaves the running agent untouched), and tuxd-win.conf is
+    # explicitly preserved across the swap, the one piece of local state
+    # that must never be silently overwritten by a fresh release.
     install_dir = Path(__file__).resolve().parent
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
@@ -300,9 +381,13 @@ def apply_update(new_version, source_type, source_value):
 
     print(f"TuxD-Win: updated to {new_version}, exiting for the Scheduled Task to restart into the new version...")
     time.sleep(1.0)
+    # See modules/restart.py's _hard_restart docstring - no self-spawn here
+    # either, for the same reason: install-windows.ps1's Scheduled Task is
+    # the one and only thing responsible for bringing this back up.
     os._exit(1)
 
 
+# ================================================================== main
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):

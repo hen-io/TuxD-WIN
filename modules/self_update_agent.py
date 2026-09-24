@@ -2,6 +2,17 @@ import json
 
 
 class SelfUpdateMixin:
+    """Same self_update object_id and update-entity shape as TuxD (Linux
+    agent)'s self_update_agent.py, on purpose - this is exactly what lets
+    TuxD-HA's TuxdDevicesWithScriptUpdatesSensor (a fleet-wide count) pick
+    up a pending TuxD-Win update with zero changes on the integration side.
+    Trimmed relative to the Linux version: no release-channel select (always
+    checks the repo's default branch/latest release) and no references to
+    terminal_output/set_error, since TuxD-Win doesn't include those mixins.
+    _update_checker/_update_applier are injected by windows_start.py exactly
+    like TuxD.py injects them for the Linux agent - this mixin never talks
+    to GitHub or the filesystem directly, only through those two callables.
+    """
 
     def init_self_update(self):
         device_cfg = self.config.get("device", {}) or {}

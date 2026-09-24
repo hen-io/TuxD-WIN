@@ -6,6 +6,14 @@ from .shared import slugify
 
 
 class ServicesMixin:
+    """One binary_sensor per Windows service name listed in tuxd-win.conf's
+    services.names - psutil has native win32 service support
+    (win_service_get), so this needs no sc.exe/PowerShell parsing at all.
+    device_class "running" is a real HA binary_sensor device class made for
+    exactly this (ON = running, OFF = anything else), with the actual
+    status string (running/stopped/paused/start_pending/not_found/...) kept
+    in an attribute for when "why" matters, not just "is it up".
+    """
 
     def init_services(self):
         services_cfg = self.config.get("services", {}) or {}

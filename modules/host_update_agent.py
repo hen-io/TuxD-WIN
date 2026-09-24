@@ -3,6 +3,13 @@ import threading
 
 from .shared import run_powershell
 
+# IsHidden=0 excludes updates the user/admin has explicitly hidden - those
+# shouldn't count as "pending" any more than a Linux apt hold would.
+# Microsoft.Update.Session is a built-in COM object (wuaueng.dll) present
+# on every supported Windows version - no PSWindowsUpdate module or other
+# extra dependency needed, matching TuxD's own "avoid extra deps" approach
+# on the Linux side (subprocess + smartctl/lm-sensors CLI tools, not a
+# Python wrapper library).
 _UPDATE_CHECK_SCRIPT = (
     "$ErrorActionPreference = 'Stop'; "
     "try { "
@@ -14,6 +21,18 @@ _UPDATE_CHECK_SCRIPT = (
 
 
 class HostUpdateMixin:
+    """Same object_id ("host_update") and update-entity shape as TuxD (Linux
+    agent)'s host_update_agent.py - what makes a Windows host with pending
+    updates count toward TuxD-HA's fleet-wide "Devices With Host Updates"
+    sensor for free. Deliberately check-only, unlike Linux's host_update
+    (which can install apt/dnf updates on command): actually applying
+    Windows Update via the same COM API means accepting EULAs, downloading,
+    installing and very often an unattended reboot of a server someone is
+    actively using - a materially bigger blast radius than a package
+    manager upgrade, and not something to automate in a first "lite" pass.
+    Install stays a human decision made directly on the box (or via
+    Settings > Windows Update, WSUS, whatever this fleet already uses).
+    """
 
     def init_host_update(self):
         cfg = self.config.get("host_update", {}) or {}

@@ -7,6 +7,16 @@ _CONFIG_FILE = "tuxd-win.conf"
 
 
 class ConfigAgentMixin:
+    """Vendored from TuxD (Linux agent)'s config_agent.py, trimmed to just
+    the raw get/set-whole-file request handling (the config/get, config/set
+    topics TuxD-HA's hub.py/config_editor.py/config_flow.py already speak) -
+    TuxD-Win is "lite" enough that it skips the per-field cfgnum/cfgsw/cfgtxt
+    config entities and the shared extra_config_path fleet-config merge
+    Linux devices support. Editing tuxd-win.conf through Home Assistant's
+    existing "Edit device configuration" screen works unmodified regardless -
+    that feature only ever calls this same get/set protocol, one whole file
+    at a time, and doesn't care what platform is on the other end of it.
+    """
 
     def handle_config_request(self, payload):
         try:
@@ -60,6 +70,9 @@ class ConfigAgentMixin:
         sender(message, timeout=5.0)
 
     def config_file_watch_loop(self):
+        # Same reasoning as TuxD's own config_file_watch_loop (fixed earlier
+        # this project for missing a second watched file) - simpler here
+        # since there's only ever the one file to watch.
         def _mtime():
             try:
                 return os.path.getmtime(_CONFIG_FILE)

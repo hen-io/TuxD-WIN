@@ -2,6 +2,16 @@ import psutil
 
 
 class DisksMixin:
+    """Combined storage_used_gb/storage_free_gb/storage_used_pct across
+    every monitored drive - same object_ids and the same explicit
+    ha_object_id overrides on the two _gb sensors as TuxD (Linux agent)'s
+    disks_agent.py uses for its host-wide combined sensors, for the same
+    reason (entity_object_id() strips the "_gb"/"_pct" unit suffix, and
+    without the override both _gb sensors would collapse to the identical
+    entity_id "storage_used" - a real collision this project already fixed
+    once on the Linux side). No per-disk SMART data - "lite" skips it, and
+    smartctl-equivalent tooling isn't a safe assumption on a Windows host.
+    """
 
     def init_disks(self):
         disk_cfg = self.config.get("disks", {}) or {}
