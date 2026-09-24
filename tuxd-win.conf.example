@@ -55,8 +55,13 @@ disks:
   enabled: true
   update_interval: 60
   # Empty = auto-detect every fixed drive (psutil.disk_partitions). List
-  # specific drive letters (e.g. ["C:\\", "D:\\"]) to limit which ones
-  # count toward the combined storage_used_gb/free_gb/used_pct sensors.
+  # specific drive letters (e.g. ["C:\\", "D:\\"]) to limit which ones are
+  # monitored. Each monitored drive gets its own used %/used GB/free GB
+  # sensors named like TuxD's per-disk ones: C:\ is "root"
+  # (sensor.<host>_root_storage_used, ..._root_storage_used_gb,
+  # ..._root_free_space), any other drive is named by its letter
+  # (D:\ -> sensor.<host>_d_storage_used). The combined storage_used_gb/
+  # free_gb/used_pct sensors add up every monitored drive.
   drives: []
 
 #################################

@@ -58,6 +58,18 @@ class HostUpdateMixin:
             icon="mdi:cloud-refresh",
             entity_category="diagnostic",
         )
+        # sensor.<host>_updates_available - the same object_id TuxD (Linux
+        # agent)'s commands.status.updates_available sensor gets (entity_id
+        # drops the "status_" prefix), published as the same "N new updates"
+        # text, so it reads identically across the fleet. Unlike the update
+        # entity above there's no placeholder value here: it stays unknown
+        # until the first real check finishes rather than claiming "0".
+        self._sensor_discovery(
+            "status_updates_available",
+            "Updates Available",
+            f"{self.base_topic}/updates_available",
+            icon="mdi:package-up",
+        )
         if self._host_update_last_count is None:
             self._publish_host_update_state(0, in_progress=False)
 
@@ -94,6 +106,7 @@ class HostUpdateMixin:
             self._host_update_checking = False
         if count >= 0:
             self._host_update_last_count = count
+            self.publish(f"{self.base_topic}/updates_available", f"{count} new updates")
         self._publish_host_update_state(max(self._host_update_last_count or 0, 0), in_progress=False)
 
     def host_update_loop(self):
