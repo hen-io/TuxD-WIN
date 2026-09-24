@@ -46,6 +46,16 @@ home-assistant:
 metrics:
   enabled: true
   update_interval: 15
+  # Only for a Windows VM: adds a "Host CPU load" sensor
+  # (sensor.<host>_host_cpu_load) - how much of the PHYSICAL host's CPU this
+  # VM is using, i.e. cpu_load * (this VM's logical cores / host_cores). A VM
+  # can't see the host's core count, so set host_cores to the hypervisor's
+  # logical core count. Same option as TuxD (Linux)'s
+  # components.cpu_load.host_cpu_load.
+  host_cpu_load:
+    enabled: false
+    host_cores: 16
+    name: "Host CPU load"
 
 network:
   enabled: true

@@ -1,4 +1,5 @@
 import datetime
+import json
 
 import psutil
 
@@ -11,6 +12,14 @@ class SystemMetricsMixin:
         self._metrics_enabled = bool(metrics_cfg.get("enabled", True))
         self._metrics_interval = float(metrics_cfg.get("update_interval", 15))
         self._agent_icon = device_cfg.get("agent_icon") or "mdi:microsoft-windows"
+        host_cfg = metrics_cfg.get("host_cpu_load") or {}
+        self._host_cpu_enabled = bool(host_cfg.get("enabled", False))
+        self._host_cpu_name = host_cfg.get("name") or "Host CPU Load"
+        try:
+            self._host_cpu_cores = max(1, int(host_cfg.get("host_cores", 1)))
+        except (TypeError, ValueError):
+            self._host_cpu_cores = 1
+        self._vm_cpu_cores = psutil.cpu_count(logical=True) or 1
         self._startup_time = datetime.datetime.now().strftime("%H:%M:%S %d.%m.%y")
         psutil.cpu_percent(interval=None)
 
@@ -44,6 +53,18 @@ class SystemMetricsMixin:
             icon="mdi:cpu-64-bit",
             state_class="measurement",
         )
+        if self._host_cpu_enabled:
+            attrs_topic = f"{self.base_topic}/host_cpu_load_attrs"
+            self._sensor_discovery(
+                "host_cpu_load",
+                self._host_cpu_name,
+                f"{self.base_topic}/host_cpu_load",
+                unit="%",
+                icon="mdi:cpu-64-bit",
+                state_class="measurement",
+                attributes_topic=attrs_topic,
+            )
+            self.publish(attrs_topic, json.dumps({"hostname": self.config["device"]["name"]}))
         self._sensor_discovery(
             "memory_used_percent",
             "Memory used percent",
@@ -63,6 +84,9 @@ class SystemMetricsMixin:
                 mem = psutil.virtual_memory().percent
                 self.publish(f"{self.base_topic}/cpu_load", round(cpu, 1))
                 self.publish(f"{self.base_topic}/memory_used_percent", round(mem, 1))
+                if self._host_cpu_enabled:
+                    host_load = max(0.0, min(100.0, cpu * self._vm_cpu_cores / self._host_cpu_cores))
+                    self.publish(f"{self.base_topic}/host_cpu_load", round(host_load, 2))
             except Exception as e:
                 print(f"TuxD-Win: system_metrics_loop error: {e!r}")
             self._stop_event.wait(timeout=self._metrics_interval)
