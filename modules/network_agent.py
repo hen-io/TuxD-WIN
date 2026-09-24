@@ -3,12 +3,6 @@ import psutil
 
 
 class NetworkMixin:
-    """A single combined network_in_out sensor (sum across every NIC via
-    psutil.net_io_counters()), not TuxD's per-configured-interface breakdown -
-    "lite" means one number, not a config block per NIC. object_id
-    "network_in_out" is still exactly what THRESHOLD_METRICS/the Fleet
-    Summary card look for.
-    """
 
     def init_network(self):
         network_cfg = self.config.get("network", {}) or {}

@@ -3,12 +3,6 @@ import subprocess
 
 
 def slugify(s):
-    # Shared slug rule for anything that ends up in an entity_id: lowercase,
-    # non-alphanumerics collapsed to a single underscore, trimmed. Kept
-    # byte-for-byte identical to TuxD (Linux agent)'s shared.py on purpose -
-    # this is what makes "identical entity id format" between the two
-    # agents possible at all, since both feed the exact same TuxD-HA
-    # integration and Lovelace cards.
     s = re.sub(r"[^a-z0-9]+", "_", str(s).lower())
     return s.strip("_")
 
@@ -50,12 +44,6 @@ def run_cmd(cmd: str, env=None):
 
 
 def run_powershell(script: str, timeout=30):
-    # Windows-only helper (TuxD's shared.py has no equivalent - nothing on
-    # Linux needs it) - every Windows-specific check that isn't cleanly
-    # available via psutil (Windows Update, service recovery info, ...)
-    # shells out to a single -Command invocation rather than a temp .ps1
-    # file, so nothing is ever left behind on disk. -NoProfile/-NonInteractive
-    # avoid a slow profile-script load and any chance of a hung prompt.
     try:
         result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],

@@ -6,26 +6,6 @@ from .shared import slugify
 
 
 class DisksMixin:
-    """Per-drive storage sensors plus the combined storage_used_gb/
-    storage_free_gb/storage_used_pct across every monitored drive.
-
-    Per-drive sensors mirror TuxD (Linux agent)'s per-disk ones for a disk
-    named "root" (disk_root_used_space -> sensor.<host>_root_storage_used,
-    ..._root_storage_used_gb, ..._root_free_space) - C:\\ is that "root"
-    drive here, every other drive is named by its letter (D:\\ ->
-    sensor.<host>_d_storage_used). Same object_ids as Linux, so the entities
-    are interchangeable across the fleet. No per-drive I/O rates or SMART -
-    "lite" skips those.
-
-    The combined sensors keep the same object_ids and the same explicit
-    ha_object_id overrides on the two _gb sensors as TuxD's host-wide
-    combined sensors, for the same reason (entity_object_id() strips the
-    "_gb"/"_pct" unit suffix, and without the override both _gb sensors
-    would collapse to the identical entity_id "storage_used" - a real
-    collision this project already fixed once on the Linux side). They stay
-    registered even with a single drive (unlike Linux, which only registers
-    them for 2+ disks) so existing entity ids never disappear.
-    """
 
     def init_disks(self):
         disk_cfg = self.config.get("disks", {}) or {}
@@ -47,9 +27,6 @@ class DisksMixin:
 
     @staticmethod
     def _drive_identity(entry):
-        # "C:", "c:\\", "C:/" all mean the C: drive; anything else (a
-        # mounted-volume folder like "E:\\data") is used as-is and named
-        # from its own slug. Returns (path_to_measure, name).
         text = str(entry).strip()
         m = re.match(r"^([A-Za-z]):[\\/]*$", text)
         if m:

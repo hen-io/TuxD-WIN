@@ -14,10 +14,6 @@ except ImportError:
 
 
 class _FakeMqttClient:
-    # Mirrors TuxD (Linux agent)'s base_direct.py - kept so the exact same
-    # on_message(client, userdata, msg) dispatch shape works unmodified here
-    # too, and so this file can stay a near-verbatim copy of that one
-    # (only the "TuxD Linux Agent" model string below actually differs).
     def __init__(self, backend):
         self._backend = backend
 
@@ -38,20 +34,6 @@ class _IncomingMsg:
 
 
 class HADirectBase:
-    """Connects a TuxD-Win agent to the exact same WebSocket endpoint and
-    wire protocol as the Linux TuxD agent (TuxD-HA's hub.py doesn't
-    distinguish between them at all - both just look like "a device that
-    said hello"). See TuxD/modules/agent/base_direct.py for the full wire
-    protocol docstring; this is a deliberate near-copy of that file so the
-    two agents never drift apart on the one thing that actually matters for
-    interoperability (discovery/state/command framing), and so a fix made
-    to one connection layer is easy to port to the other by inspection.
-
-    Live TTY / terminal_input are NOT implemented here - TuxD-Win is a
-    monitoring-and-management-only agent (no interactive shell), so those
-    message types are simply never sent by this side and never appear in
-    _handle_incoming below.
-    """
 
     _HEARTBEAT_INTERVAL = 5.0
     _HEARTBEAT_TIMEOUT = 10.0
@@ -116,7 +98,6 @@ class HADirectBase:
             return str(text)
         return f"{self._CLR_GRAY}{text}{self._CLR_RESET}"
 
-    # ---------------------------------------------------------------- connect
 
     def connect(self):
         ha_cfg = self.config.get("home-assistant") or {}
@@ -254,9 +235,6 @@ class HADirectBase:
                     print(self._gray(f"Direct: on_message failed for {key}: {e!r}"))
         elif msg.get("type") == "ping":
             self._send_nowait({"type": "pong"})
-        # tty_open/tty_input/tty_resize/tty_close are intentionally not
-        # handled - TuxD-Win never advertises a terminal_input entity, so
-        # HA's live_tty.py/hub.py never has a reason to send these to it.
 
     def _resend_all_state(self):
         for topic, payload in list(self.state_cache.items()):
@@ -300,7 +278,6 @@ class HADirectBase:
             except Exception:
                 pass
 
-    # ------------------------------------------------------------- publish
 
     def publish(self, topic, payload, retain=True):
         if not isinstance(payload, str):
@@ -357,7 +334,6 @@ class HADirectBase:
                 per_message_timeout,
             )
 
-    # --------------------------------------------------------------- misc
 
     def _discovery_topic(self, domain, object_id):
         return f"homeassistant/{domain}/{self.config['device']['name']}/{object_id}/config"
