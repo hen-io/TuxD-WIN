@@ -11,7 +11,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 GITHUB_REPO = "hen-io/TuxD-WIN"
 CONFIG_FILE = "tuxd-win.conf"
 
@@ -287,6 +287,13 @@ def _github_headers():
     return headers
 
 
+def _is_newer(tag, current):
+    try:
+        return tuple(int(p) for p in tag.split(".")) > tuple(int(p) for p in current.split("."))
+    except ValueError:
+        return tag != current
+
+
 def check_for_update(force=False):
     try:
         req = urllib.request.Request(
@@ -300,7 +307,7 @@ def check_for_update(force=False):
         return None, None, None, None
 
     tag = str(release.get("tag_name") or "").lstrip("v")
-    if not tag or tag == VERSION:
+    if not tag or not _is_newer(tag, VERSION):
         return None, None, None, None
 
     download_url = ""
@@ -320,7 +327,7 @@ def check_for_update(force=False):
 
 def _safe_extract(archive_path: Path, dest_dir: Path):
     dest_dir.mkdir(parents=True, exist_ok=True)
-    if str(archive_path).endswith(".zip"):
+    if zipfile.is_zipfile(archive_path):
         with zipfile.ZipFile(archive_path) as z:
             dest_real = os.path.realpath(dest_dir)
             for member in z.infolist():
@@ -358,7 +365,7 @@ def apply_update(new_version, source_type, source_value):
     install_dir = Path(__file__).resolve().parent
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
-        archive_path = td_path / ("release.zip" if source_value.endswith(".zip") else "release.tar.gz")
+        archive_path = td_path / "release.archive"
         req = urllib.request.Request(source_value, headers=_github_headers())
         with urllib.request.urlopen(req, timeout=60) as resp, open(archive_path, "wb") as f:
             shutil.copyfileobj(resp, f)
