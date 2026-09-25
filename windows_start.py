@@ -11,7 +11,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 GITHUB_REPO = "hen-io/TuxD-WIN"
 CONFIG_FILE = "tuxd-win.conf"
 
@@ -246,6 +246,8 @@ class TuxDWinAgent(
             self.handle_force_poll_message()
         elif topic == f"{self.base_topic}/host_update/check/set":
             self.handle_host_update_check()
+        elif topic == f"{self.base_topic}/host_update/set":
+            self.handle_host_update_install()
         elif topic == f"{self.base_topic}/self_update/set":
             self.handle_self_update_install()
         elif topic == f"{self.base_topic}/self_update/check/set":
