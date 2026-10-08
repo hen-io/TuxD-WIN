@@ -38,6 +38,8 @@ class HostUpdateMixin:
         cfg = self.config.get("host_update", {}) or {}
         self._host_update_enabled = bool(cfg.get("enabled", True))
         self._host_update_interval = float(cfg.get("check_interval", 3600))
+        suffix = cfg.get("updates_suffix")
+        self._host_update_suffix = " new updates" if suffix is None else str(suffix)
         self._host_update_allow_install = bool(cfg.get("allow_install", True))
         self._host_update_auto_reboot = bool(cfg.get("auto_reboot", False))
         self._host_update_last_count = None
@@ -155,7 +157,7 @@ class HostUpdateMixin:
         if count >= 0:
             self._host_update_last_count = count
             self._host_update_last_titles = titles
-            self.publish(f"{self.base_topic}/updates_available", f"{count} new updates")
+            self.publish(f"{self.base_topic}/updates_available", f"{count}{self._host_update_suffix}")
         self._publish_host_update_state(max(self._host_update_last_count or 0, 0), in_progress=False, titles=self._host_update_last_titles)
 
     def host_update_loop(self):
