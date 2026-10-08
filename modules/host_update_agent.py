@@ -39,7 +39,7 @@ class HostUpdateMixin:
         self._host_update_enabled = bool(cfg.get("enabled", True))
         self._host_update_interval = float(cfg.get("check_interval", 3600))
         suffix = cfg.get("updates_suffix")
-        self._host_update_suffix = " new updates" if suffix is None else str(suffix)
+        self._host_update_suffix = " oppdateringer tilgjengelig" if suffix is None else str(suffix)
         self._host_update_allow_install = bool(cfg.get("allow_install", True))
         self._host_update_auto_reboot = bool(cfg.get("auto_reboot", False))
         self._host_update_last_count = None
