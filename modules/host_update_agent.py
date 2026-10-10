@@ -16,20 +16,28 @@ _UPDATE_CHECK_SCRIPT = (
 
 _MAX_LISTED_UPDATES = 50
 
-_UPDATE_INSTALL_SCRIPT = "\n".join([
-    "$ErrorActionPreference = 'Stop'",
-    "try {",
-    "  $s = New-Object -ComObject Microsoft.Update.Session",
-    "  $r = $s.CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0')",
-    "  if ($r.Updates.Count -eq 0) { Write-Output 'RESULT:2'; Write-Output 'REBOOT:False'; exit 0 }",
-    "  $c = New-Object -ComObject Microsoft.Update.UpdateColl",
-    "  foreach ($u in $r.Updates) { if (-not $u.EulaAccepted) { $u.AcceptEula() }; [void]$c.Add($u) }",
-    "  $d = $s.CreateUpdateDownloader(); $d.Updates = $c; [void]$d.Download()",
-    "  $i = $s.CreateUpdateInstaller(); $i.Updates = $c; $res = $i.Install()",
-    "  Write-Output ('RESULT:' + $res.ResultCode)",
-    "  Write-Output ('REBOOT:' + $res.RebootRequired)",
-    "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
-])
+def _install_script(ignore):
+    skip = ", ".join("'" + str(p).replace("'", "''") + "'" for p in ignore) or "@()"
+    return "\n".join([
+        "$ErrorActionPreference = 'Stop'",
+        "try {",
+        f"  $skip = @({skip})",
+        "  $s = New-Object -ComObject Microsoft.Update.Session",
+        "  $r = $s.CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0')",
+        "  $c = New-Object -ComObject Microsoft.Update.UpdateColl",
+        "  foreach ($u in $r.Updates) {",
+        "    $t = $u.Title; $hit = $false",
+        "    foreach ($p in $skip) { if ($t -like ('*' + [WildcardPattern]::Escape($p) + '*')) { $hit = $true } }",
+        "    if ($hit) { continue }",
+        "    if (-not $u.EulaAccepted) { $u.AcceptEula() }; [void]$c.Add($u)",
+        "  }",
+        "  if ($c.Count -eq 0) { Write-Output 'RESULT:2'; Write-Output 'REBOOT:False'; exit 0 }",
+        "  $d = $s.CreateUpdateDownloader(); $d.Updates = $c; [void]$d.Download()",
+        "  $i = $s.CreateUpdateInstaller(); $i.Updates = $c; $res = $i.Install()",
+        "  Write-Output ('RESULT:' + $res.ResultCode)",
+        "  Write-Output ('REBOOT:' + $res.RebootRequired)",
+        "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
+    ])
 
 
 class HostUpdateMixin:
@@ -42,6 +50,10 @@ class HostUpdateMixin:
         self._host_update_suffix = " oppdateringer tilgjengelig" if suffix is None else str(suffix)
         self._host_update_allow_install = bool(cfg.get("allow_install", True))
         self._host_update_auto_reboot = bool(cfg.get("auto_reboot", False))
+        ignore = cfg.get("ignore_titles") or []
+        if isinstance(ignore, str):
+            ignore = [ignore]
+        self._host_update_ignore = [str(p).strip().lower() for p in ignore if str(p).strip()]
         self._host_update_last_count = None
         self._host_update_last_titles = []
         self._host_update_note = ""
@@ -107,7 +119,7 @@ class HostUpdateMixin:
         print("TuxD-Win: installing Windows updates...")
         reboot = False
         try:
-            output = run_powershell(_UPDATE_INSTALL_SCRIPT, timeout=7200)
+            output = run_powershell(_install_script(self._host_update_ignore), timeout=7200)
             fields = {}
             for line in output.splitlines():
                 key, _, value = line.strip().partition(":")
@@ -149,7 +161,13 @@ class HostUpdateMixin:
             lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
             if lines:
                 count = int(lines[0])
-                titles = lines[1:_MAX_LISTED_UPDATES + 1] if count > 0 else []
+                if count > 0:
+                    found = lines[1:]
+                    titles = [t for t in found if not any(p in t.lower() for p in self._host_update_ignore)]
+                    count -= len(found) - len(titles)
+                    titles = titles[:_MAX_LISTED_UPDATES]
+                else:
+                    titles = []
         except Exception as e:
             print(f"TuxD-Win: Windows Update check failed: {e!r}")
         finally:

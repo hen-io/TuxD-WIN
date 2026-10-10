@@ -7,11 +7,12 @@ import tarfile
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = "0.2.7"
+VERSION = "0.2.8"
 GITHUB_REPO = "hen-io/TuxD-WIN"
 CONFIG_FILE = "tuxd-win.conf"
 
@@ -291,6 +292,70 @@ def _github_headers():
     return headers
 
 
+class _NoAuthOnRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and urllib.parse.urlsplit(newurl).netloc != urllib.parse.urlsplit(req.full_url).netloc:
+            new.headers = {k: v for k, v in new.headers.items() if k.lower() != "authorization"}
+        return new
+
+
+def _urlopen(req, timeout, context=None):
+    handlers = [_NoAuthOnRedirect()]
+    if context is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=context))
+    return urllib.request.build_opener(*handlers).open(req, timeout=timeout)
+
+
+def _is_cert_error(exc):
+    import ssl
+    reason = getattr(exc, "reason", exc)
+    return isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(exc)
+
+
+def _github_download(url, dest, timeout):
+    headers = _github_headers()
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with _urlopen(req, timeout) as resp, open(dest, "wb") as f:
+            shutil.copyfileobj(resp, f)
+        return
+    except Exception as e:
+        if not _is_cert_error(e):
+            raise
+
+    try:
+        import ssl
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        with _urlopen(req, timeout, context=ctx) as resp, open(dest, "wb") as f:
+            shutil.copyfileobj(resp, f)
+        return
+    except ImportError:
+        pass
+    except Exception as e:
+        if not _is_cert_error(e):
+            raise
+
+    curl = shutil.which("curl.exe") or shutil.which("curl")
+    if not curl:
+        raise RuntimeError("certificate verification failed and curl.exe is not available as a fallback")
+    cmd = [curl, "--fail", "--silent", "--show-error", "--location", "--max-time", str(int(timeout)), "--output", str(dest)]
+    for key, value in headers.items():
+        cmd += ["--header", f"{key}: {value}"]
+    cmd.append(url)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 15)
+    if result.returncode != 0:
+        raise RuntimeError(f"curl failed ({result.returncode}): {(result.stderr or '').strip()[:300]}")
+
+
+def _github_read(url, timeout):
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "response"
+        _github_download(url, path, timeout)
+        return path.read_bytes()
+
+
 def _is_newer(tag, current):
     try:
         return tuple(int(p) for p in tag.split(".")) > tuple(int(p) for p in current.split("."))
@@ -300,12 +365,9 @@ def _is_newer(tag, current):
 
 def check_for_update(force=False):
     try:
-        req = urllib.request.Request(
-            f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
-            headers=_github_headers(),
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            release = json.loads(resp.read().decode("utf-8"))
+        release = json.loads(_github_read(
+            f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest", 15,
+        ).decode("utf-8"))
     except Exception as e:
         print(f"TuxD-Win: update check failed: {e!r}")
         return None, None, None, None
@@ -370,9 +432,7 @@ def apply_update(new_version, source_type, source_value):
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
         archive_path = td_path / "release.archive"
-        req = urllib.request.Request(source_value, headers=_github_headers())
-        with urllib.request.urlopen(req, timeout=60) as resp, open(archive_path, "wb") as f:
-            shutil.copyfileobj(resp, f)
+        _github_download(source_value, archive_path, 60)
 
         extract_dir = td_path / "extract"
         _safe_extract(archive_path, extract_dir)
@@ -444,6 +504,8 @@ def main():
                 _watch_supervisor(int(arg[len(_SUPERVISOR_PID_ARG):]))
             except ValueError:
                 pass
+
+    os.chdir(Path(__file__).resolve().parent)
 
     config = load_config()
     if not (config.get("device") or {}).get("name"):

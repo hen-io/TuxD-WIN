@@ -1,7 +1,18 @@
 import datetime
 import json
+import platform
+import time
 
 import psutil
+
+
+def _up_time_text(seconds):
+    minutes = int(seconds) // 60
+    parts = []
+    for count, word in ((minutes // 1440, "day"), (minutes % 1440 // 60, "hour"), (minutes % 60, "minute")):
+        if count:
+            parts.append(f"{count} {word}{'' if count == 1 else 's'}")
+    return ", ".join(parts) or "0 minutes"
 
 
 class SystemMetricsMixin:
@@ -20,6 +31,10 @@ class SystemMetricsMixin:
         except (TypeError, ValueError):
             self._host_cpu_cores = 1
         self._vm_cpu_cores = psutil.cpu_count(logical=True) or 1
+        try:
+            self._kernel_version = platform.version() or "unknown"
+        except Exception:
+            self._kernel_version = "unknown"
         self._startup_time = datetime.datetime.now().strftime("%H:%M:%S %d.%m.%y")
         psutil.cpu_percent(interval=None)
 
@@ -75,6 +90,32 @@ class SystemMetricsMixin:
             state_class="measurement",
         )
 
+        self._sensor_discovery(
+            "status_processes",
+            "Processes",
+            f"{self.base_topic}/processes",
+            icon="mdi:format-list-numbered",
+        )
+        self._sensor_discovery(
+            "status_kernel_version",
+            "Kernel Version",
+            f"{self.base_topic}/kernel_version",
+            icon="mdi:microsoft-windows",
+        )
+        self._sensor_discovery(
+            "status_up_time",
+            "Up Time",
+            f"{self.base_topic}/up_time",
+            icon="mdi:timer-outline",
+        )
+        self.publish(f"{self.base_topic}/kernel_version", self._kernel_version, retain=True)
+        self._publish_host_status()
+
+    def _publish_host_status(self):
+        self._host_status_published = time.time()
+        self.publish(f"{self.base_topic}/processes", len(psutil.pids()))
+        self.publish(f"{self.base_topic}/up_time", _up_time_text(time.time() - psutil.boot_time()))
+
     def system_metrics_loop(self):
         if not self._metrics_enabled:
             return
@@ -87,6 +128,8 @@ class SystemMetricsMixin:
                 if self._host_cpu_enabled:
                     host_load = max(0.0, min(100.0, cpu * self._vm_cpu_cores / self._host_cpu_cores))
                     self.publish(f"{self.base_topic}/host_cpu_load", round(host_load, 2))
+                if time.time() - getattr(self, "_host_status_published", 0) >= 60:
+                    self._publish_host_status()
             except Exception as e:
                 print(f"TuxD-Win: system_metrics_loop error: {e!r}")
             self._stop_event.wait(timeout=self._metrics_interval)

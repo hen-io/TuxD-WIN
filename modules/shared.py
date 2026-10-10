@@ -49,6 +49,7 @@ def run_powershell(script: str, timeout=30):
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=timeout,
         )
         return result.stdout.strip()
