@@ -16,28 +16,20 @@ _UPDATE_CHECK_SCRIPT = (
 
 _MAX_LISTED_UPDATES = 50
 
-def _install_script(ignore):
-    skip = ", ".join("'" + str(p).replace("'", "''") + "'" for p in ignore) or "@()"
-    return "\n".join([
-        "$ErrorActionPreference = 'Stop'",
-        "try {",
-        f"  $skip = @({skip})",
-        "  $s = New-Object -ComObject Microsoft.Update.Session",
-        "  $r = $s.CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0')",
-        "  $c = New-Object -ComObject Microsoft.Update.UpdateColl",
-        "  foreach ($u in $r.Updates) {",
-        "    $t = $u.Title; $hit = $false",
-        "    foreach ($p in $skip) { if ($t -like ('*' + [WildcardPattern]::Escape($p) + '*')) { $hit = $true } }",
-        "    if ($hit) { continue }",
-        "    if (-not $u.EulaAccepted) { $u.AcceptEula() }; [void]$c.Add($u)",
-        "  }",
-        "  if ($c.Count -eq 0) { Write-Output 'RESULT:2'; Write-Output 'REBOOT:False'; exit 0 }",
-        "  $d = $s.CreateUpdateDownloader(); $d.Updates = $c; [void]$d.Download()",
-        "  $i = $s.CreateUpdateInstaller(); $i.Updates = $c; $res = $i.Install()",
-        "  Write-Output ('RESULT:' + $res.ResultCode)",
-        "  Write-Output ('REBOOT:' + $res.RebootRequired)",
-        "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
-    ])
+_UPDATE_INSTALL_SCRIPT = "\n".join([
+    "$ErrorActionPreference = 'Stop'",
+    "try {",
+    "  $s = New-Object -ComObject Microsoft.Update.Session",
+    "  $r = $s.CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0')",
+    "  if ($r.Updates.Count -eq 0) { Write-Output 'RESULT:2'; Write-Output 'REBOOT:False'; exit 0 }",
+    "  $c = New-Object -ComObject Microsoft.Update.UpdateColl",
+    "  foreach ($u in $r.Updates) { if (-not $u.EulaAccepted) { $u.AcceptEula() }; [void]$c.Add($u) }",
+    "  $d = $s.CreateUpdateDownloader(); $d.Updates = $c; [void]$d.Download()",
+    "  $i = $s.CreateUpdateInstaller(); $i.Updates = $c; $res = $i.Install()",
+    "  Write-Output ('RESULT:' + $res.ResultCode)",
+    "  Write-Output ('REBOOT:' + $res.RebootRequired)",
+    "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
+])
 
 
 class HostUpdateMixin:
@@ -120,7 +112,7 @@ class HostUpdateMixin:
         reboot = False
         try:
             with self.busy("Windows Update: installing"):
-                output = run_powershell(_install_script(self._host_update_ignore), timeout=7200)
+                output = run_powershell(_UPDATE_INSTALL_SCRIPT, timeout=7200)
             fields = {}
             for line in output.splitlines():
                 key, _, value = line.strip().partition(":")
