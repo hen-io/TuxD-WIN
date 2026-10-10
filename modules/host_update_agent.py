@@ -119,7 +119,8 @@ class HostUpdateMixin:
         print("TuxD-Win: installing Windows updates...")
         reboot = False
         try:
-            output = run_powershell(_install_script(self._host_update_ignore), timeout=7200)
+            with self.busy("Windows Update: installing"):
+                output = run_powershell(_install_script(self._host_update_ignore), timeout=7200)
             fields = {}
             for line in output.splitlines():
                 key, _, value = line.strip().partition(":")
@@ -153,11 +154,12 @@ class HostUpdateMixin:
         if self._host_update_checking or self._host_update_installing:
             return
         self._host_update_checking = True
-        self._publish_host_update_state(self._host_update_last_count or 0, in_progress=True, titles=self._host_update_last_titles)
+        self._publish_host_update_state(self._host_update_last_count or 0, in_progress=False, titles=self._host_update_last_titles)
         count = -1
         titles = []
         try:
-            output = run_powershell(_UPDATE_CHECK_SCRIPT, timeout=180)
+            with self.busy("Windows Update: checking"):
+                output = run_powershell(_UPDATE_CHECK_SCRIPT, timeout=180)
             lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
             if lines:
                 count = int(lines[0])

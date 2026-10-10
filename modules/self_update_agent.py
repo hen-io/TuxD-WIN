@@ -103,7 +103,8 @@ class SelfUpdateMixin:
                 return
             self._set_self_update_progress(True)
             print(f"TuxD-Win: installing update {new_version}, restarting...")
-            self._update_applier(new_version, src_type, src_val)
+            with self.busy("TuxD-Win: installing agent update"):
+                self._update_applier(new_version, src_type, src_val)
         except Exception as e:
             print(f"TuxD-Win: self-update failed: {e!r}")
             self._set_self_update_progress(False)
@@ -127,7 +128,8 @@ class SelfUpdateMixin:
         try:
             self._set_self_update_progress(True)
             print(f"TuxD-Win: installing update from {url}, restarting...")
-            self._update_applier("offline-tarball", "url", url)
+            with self.busy("TuxD-Win: installing agent update"):
+                self._update_applier("offline-tarball", "url", url)
         except Exception as e:
             print(f"TuxD-Win: self-update from url failed: {e!r}")
             self._set_self_update_progress(False)
