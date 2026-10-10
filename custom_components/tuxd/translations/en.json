@@ -1,0 +1,135 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up TuxD",
+        "description": "TuxD agents will connect directly to this Home Assistant instance instead of through MQTT. This is a *pairing* key, not a permanent credential - paste it into a new agent's tuxd.conf under home-assistant.pairing_key (with tuxd.connection_mode set to \"direct\") to introduce it, then open this integration's Configure button to approve it and issue it its own permanent key. It's reusable - the same key introduces every new device you add from now on, and you can see it again any time on the Configure screen:\n\n`{pairing_key}`\n\nIf you want to invalidate it, use Reconfigure to generate a new one. Devices you've already approved are unaffected by that."
+      },
+      "reconfigure": {
+        "title": "Rotate TuxD pairing key",
+        "description": "This replaces the pairing key used to introduce brand-new devices. Already-approved devices keep their own dedicated keys and are not affected - this only stops anyone still holding the old pairing key from introducing a new device:\n\n`{pairing_key}`"
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "TuxD is already set up - only one instance is needed, since every agent shares the same connection endpoint.",
+      "reconfigure_successful": "Pairing key rotated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "TuxD devices",
+        "description": "Pairing key, for introducing a new device:\n\n`{pairing_key}`\n\n{pending_summary}",
+        "menu_options": {
+          "pending": "Review new devices",
+          "manage": "Manage approved devices",
+          "view_keys": "View device keys",
+          "config": "Edit device configuration",
+          "run_command": "Run terminal command",
+          "restore_entity_ids": "Restore entity IDs",
+          "manual_key": "Set a specific key"
+        }
+      },
+      "pending": {
+        "title": "Review new devices",
+        "description": "These devices presented the pairing key (or their own value - see Trust below) and are waiting for you to confirm they're legitimate before they get their own permanent key and can report data or receive commands. Approve mints a brand new key - paste it into that device's own tuxd.conf. Trust uses the key a device already presented as-is, so it doesn't need to change anything (only offered for a device that presented its own value, not the shared pairing key). Reject dismisses anything you don't recognize.\n\nPairing key, for introducing further new devices:\n\n`{pairing_key}`",
+        "data": {
+          "approve": "Approve (new key)",
+          "trust": "Trust (use its own key)",
+          "reject": "Reject"
+        }
+      },
+      "manage": {
+        "title": "Manage approved devices",
+        "description": "Rotate issues a device a brand new key (the old one stops working immediately) - useful if a key may have leaked. Revoke pulls a device's key without deleting it from Home Assistant - it can only reconnect after being re-approved with the current pairing key. To remove a device entirely, delete it from its own device page instead.",
+        "data": {
+          "rotate": "Rotate key",
+          "revoke": "Revoke"
+        }
+      },
+      "config_device": {
+        "title": "Choose TuxD device",
+        "description": "Select a connected direct-mode device to edit.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "config": {
+        "title": "Edit {device} configuration",
+        "description": "Edit the complete tuxd.conf YAML. Saving replaces the file atomically and restarts the device. Keep secrets protected.",
+        "data": {
+          "yaml": "tuxd.conf YAML"
+        }
+      },
+      "view_keys": {
+        "title": "Current device keys",
+        "description": "{keys}"
+      },
+      "run_command": {
+        "title": "Run terminal command",
+        "description": "Runs one command on every terminal-enabled device selected below (all are checked by default - uncheck any you want to skip). This opens a real terminal session on each device the same way the terminal card does, types the command, and collects a few seconds of output - not meant for a long-running foreground process. If a device has a password set under tuxd.conf's [device] section, enter it below; devices without one ignore it.",
+        "data": {
+          "devices": "Devices",
+          "command": "Command",
+          "password": "Password (if required)"
+        }
+      },
+      "run_command_result": {
+        "title": "Command results",
+        "description": "{results}"
+      },
+      "manual_key": {
+        "title": "Set a specific key",
+        "description": "Assigns a device a key you choose yourself, instead of a randomly generated one - e.g. one already deployed to it out-of-band. Works for a pending device (approves it with this key) or an already-approved one (replaces its existing key).",
+        "data": {
+          "device": "Device",
+          "key": "Key"
+        }
+      },
+      "no_pending": {
+        "title": "TuxD devices",
+        "description": "No devices are pending approval or approved yet.\n\nPairing key, for introducing a new device:\n\n`{pairing_key}`"
+      },
+      "issued": {
+        "title": "New device keys",
+        "description": "Paste each key into that device's own tuxd.conf under home-assistant.api_key. Shown only once:\n\n{keys}"
+      },
+      "restore_entity_ids": {
+        "title": "Restore entity IDs",
+        "description": "Recomputes every device's entity IDs using the current naming scheme (or a manual override set in tuxd.conf) and renames any that don't already match. This is disruptive on purpose - anything referencing an old entity ID (a dashboard, an automation, a template) will break the moment it changes. Only use this after a naming-scheme change, or to pick up a new manual entity_id override."
+      },
+      "restore_entity_ids_done": {
+        "title": "Entity IDs restored",
+        "description": "Renamed {renamed} entit(y/ies). Skipped {skipped} that would have collided with something else already using the target ID - those need a manual look."
+      }
+    },
+    "error": {
+      "key_required": "Pick a device AND enter a key - both are needed to set one manually.",
+      "key_collision": "That key is already used by a different device - each device needs its own unique key.",
+      "no_devices_selected": "Select at least one device to run the command on.",
+      "command_required": "Enter a command to run."
+    }
+  },
+  "issues": {
+    "pending_devices": {
+      "title": "TuxD device(s) awaiting approval",
+      "description": "{count} TuxD device(s) presented the pairing key and are waiting for you to confirm they're legitimate before they get their own permanent key and can report data or receive commands. Click Fix to review them.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Approve TuxD devices",
+            "description": "These devices presented the pairing key and are waiting for you to confirm they're legitimate before they get their own permanent key and can report data or receive commands. Reject anything you don't recognize.",
+            "data": {
+              "approve": "Approve",
+              "reject": "Reject"
+            }
+          },
+          "issued": {
+            "title": "New device keys",
+            "description": "Paste each key into that device's own tuxd.conf under home-assistant.api_key. Shown only once:\n\n{keys}"
+          }
+        }
+      }
+    }
+  }
+}
