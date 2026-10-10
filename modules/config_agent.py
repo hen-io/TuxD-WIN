@@ -31,6 +31,19 @@ class ConfigAgentMixin:
                 self._send_config_response(request_id, False, error="tuxd-win.conf must contain a YAML mapping")
                 return
 
+            device = parsed.get("device") if isinstance(parsed.get("device"), dict) else {}
+            ha = parsed.get("home-assistant") if isinstance(parsed.get("home-assistant"), dict) else {}
+            if not str(device.get("name") or "").strip():
+                self._send_config_response(request_id, False, error="device.name must be set")
+                return
+            if not str(ha.get("url") or "").strip():
+                self._send_config_response(request_id, False, error="home-assistant.url must be set")
+                return
+
+            if os.path.exists(_CONFIG_FILE):
+                with open(_CONFIG_FILE, "r", encoding="utf-8") as src, open(_CONFIG_FILE + ".bak", "w", encoding="utf-8", newline="") as dst:
+                    dst.write(src.read())
+
             with tempfile.NamedTemporaryFile(
                 "w", encoding="utf-8", dir=".", prefix=".tuxd-win.conf.", delete=False
             ) as tmp:
