@@ -189,13 +189,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $confPath = Join-Path $InstallDir "tuxd-win.conf"
-$examplePath = Join-Path $InstallDir "tuxd-win.conf.example"
 if (-not (Test-Path $confPath)) {
-    Copy-Item $examplePath $confPath
-    Write-Host "Created tuxd-win.conf from the example - edit device.name and home-assistant.url/pairing_key before starting the task."
-} else {
-    Write-Host "tuxd-win.conf already exists - left untouched."
+    Write-Error "tuxd-win.conf is missing from $InstallDir - it ships with the agent."
+    exit 1
 }
+Write-Host "tuxd-win.conf is left untouched - edit device.name and home-assistant.url/pairing_key before starting the task."
 
 $taskName = "TuxD-Win"
 $scriptPath = Join-Path $InstallDir "windows_start.py"
