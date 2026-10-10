@@ -1,0 +1,117 @@
+# tuxd-win.conf.example - copy to tuxd-win.conf (same folder as windows_start.py) and
+# edit. install-windows.ps1 does the copy for you on a first install.
+# Only device.name and home-assistant.url / pairing_key are required;
+# everything else shows its default.
+
+#################################
+# Device                        #
+#################################
+
+device:
+  # This host's name in Home Assistant. Every entity id is built from it, so
+  # keep it stable once set.
+  name: ""
+  # Print what the agent sends to the console (noisy; for running by hand).
+  tty_output: false
+  # Seconds between re-announcing the entities to Home Assistant.
+  refresh_entities: 300
+  # Icon shown for this agent in the TuxD cards.
+  agent_icon: "mdi:microsoft-windows"
+  # Seconds between checks for a new agent version.
+  self_update_check_interval: 300
+  # true = the Install button on the agent update entity works.
+  self_update_allow_install: true
+  # true = show the Restart and Shut down buttons.
+  power_buttons: true
+  # Commands those buttons run. Empty = "shutdown /r /f /t 5" and
+  # "shutdown /s /f /t 5".
+  reboot_cmd: ""
+  shutdown_cmd: ""
+
+#################################
+# Home Assistant                #
+#################################
+
+home-assistant:
+  # Your Home Assistant address. Must be https:// (see allow_insecure).
+  url: ""
+  # From the TuxD integration; used once, to introduce this host. Approve
+  # the host in Home Assistant afterwards.
+  pairing_key: ""
+  # Filled in by Home Assistant after approval; leave empty before that.
+  api_key: ""
+  # false = accept any certificate (only for a self-signed lab setup).
+  verify_ssl: true
+  # Seconds to wait before reconnecting after the connection is lost.
+  retry_delay: 15
+  # true = allow plain http:// (everything is sent unencrypted).
+  allow_insecure: false
+
+#################################
+# Metrics (CPU and memory)      #
+#################################
+
+metrics:
+  enabled: true
+  # Seconds between readings.
+  update_interval: 15
+  # For a virtual machine: also report how much of the physical host's CPU
+  # this VM uses.
+  host_cpu_load:
+    enabled: false
+    # Number of logical CPUs on the physical host.
+    host_cores: 16
+    # Sensor name.
+    name: "Host CPU load"
+
+#################################
+# Network                       #
+#################################
+
+network:
+  enabled: true
+  # Seconds between readings of the combined traffic (Mbit/s).
+  update_interval: 5
+
+#################################
+# Disks                         #
+#################################
+
+disks:
+  enabled: true
+  update_interval: 60
+  # Drives to monitor, e.g. ["C:\\", "D:\\"]. Empty = every fixed drive.
+  # C: is named "root", the others by their letter.
+  drives: []
+
+#################################
+# Windows services              #
+#################################
+
+services:
+  enabled: true
+  update_interval: 30
+  # One on/off sensor per service, by its service name (not the display
+  # name), e.g. ["Spooler", "W32Time"]. Only checked, never started or stopped.
+  names: []
+
+#################################
+# Windows Update                #
+#################################
+
+host_update:
+  enabled: true
+  # Seconds between checks for pending updates (a check can take a minute).
+  check_interval: 3600
+  # Text after the count in the "updates available" sensor. "" = just the number.
+  updates_suffix: " new updates"
+  # true = the Install button on the update entity works.
+  allow_install: true
+  # true = restart automatically when an install needs it.
+  auto_reboot: false
+  # Updates with one of these in their title (any case) are not listed as
+  # available. They are still installed by the Install button.
+  ignore_titles: []
+  # Example:
+  # ignore_titles:
+  #   - "Security Intelligence Update for Microsoft Defender Antivirus"

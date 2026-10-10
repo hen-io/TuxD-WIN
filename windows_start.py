@@ -12,7 +12,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = "0.2.10"
+VERSION = "0.2.11"
 GITHUB_REPO = "hen-io/TuxD-WIN"
 CONFIG_FILE = "tuxd-win.conf"
 
@@ -444,12 +444,11 @@ def apply_update(new_version, source_type, source_value):
         if not (release_root / "windows_start.py").exists():
             raise RuntimeError("Downloaded release doesn't look like a valid TuxD-Win build")
 
-        saved_conf = None
         conf_path = install_dir / CONFIG_FILE
-        if conf_path.exists():
-            saved_conf = conf_path.read_bytes()
 
         for item in release_root.iterdir():
+            if item.name == CONFIG_FILE and conf_path.exists():
+                continue
             dest = install_dir / item.name
             if dest.exists():
                 if dest.is_dir():
@@ -457,9 +456,6 @@ def apply_update(new_version, source_type, source_value):
                 else:
                     dest.unlink()
             shutil.move(str(item), str(dest))
-
-        if saved_conf is not None:
-            conf_path.write_bytes(saved_conf)
 
     print(f"TuxD-Win: updated to {new_version}, exiting for the supervisor to restart into the new version...")
     time.sleep(1.0)
@@ -470,7 +466,7 @@ def apply_update(new_version, source_type, source_value):
 def load_config():
     if not os.path.exists(CONFIG_FILE):
         raise SystemExit(
-            f"TuxD-Win: {CONFIG_FILE} not found in the current directory - copy tuxd-win.conf.example "
+            f"TuxD-Win: {CONFIG_FILE} not found in the current directory - copy tuxd-win.conf.example to tuxd-win.conf "
             "next to windows_start.py, fill in device.name and home-assistant.url/pairing_key, then retry."
         )
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
