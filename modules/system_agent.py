@@ -26,6 +26,9 @@ class SystemMetricsMixin:
         host_cfg = metrics_cfg.get("host_cpu_load") or {}
         self._host_cpu_enabled = bool(host_cfg.get("enabled", False))
         self._host_cpu_name = host_cfg.get("name") or "Host CPU Load"
+        agent_name = str(device_cfg.get("name") or "")
+        if agent_name and not self._host_cpu_name.lower().startswith(agent_name.lower() + " "):
+            self._host_cpu_name = f"{agent_name} {self._host_cpu_name}"
         try:
             self._host_cpu_cores = max(1, int(host_cfg.get("host_cores", 1)))
         except (TypeError, ValueError):
