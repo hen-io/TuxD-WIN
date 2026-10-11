@@ -85,6 +85,7 @@ class HostUpdateMixin:
             "installed_version": "0",
             "latest_version": str(count),
             "title": "Windows Updates",
+            "distro": ["windows"],
             "in_progress": in_progress,
         }
         lines = []
