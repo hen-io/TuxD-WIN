@@ -12,7 +12,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = "0.2.21"
+VERSION = "0.2.22"
 GITHUB_REPO = "hen-io/TuxD-WIN"
 CONFIG_FILE = "tuxd-win.conf"
 
@@ -367,7 +367,26 @@ def _is_newer(tag, current):
         return tag != current
 
 
+def _newest_feed_tag():
+    import re
+    feed = _github_read(f"https://github.com/{GITHUB_REPO}/releases.atom", 15).decode("utf-8", errors="replace")
+    match = re.search(r"/releases/tag/([^\"'<>\s]+)", feed)
+    return urllib.parse.unquote(match.group(1)).lstrip("v") if match else ""
+
+
+_RELEASE_SEEN = {}
+
+
 def check_for_update(force=False):
+    try:
+        feed_tag = _newest_feed_tag()
+    except Exception as e:
+        print(f"TuxD-Win: update check failed: {e!r}")
+        return None, None, None, None
+    if not feed_tag or not _is_newer(feed_tag, VERSION):
+        return None, None, None, None
+    if feed_tag in _RELEASE_SEEN:
+        return _RELEASE_SEEN[feed_tag]
     try:
         release = json.loads(_github_read(
             f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest", 15,
@@ -375,7 +394,11 @@ def check_for_update(force=False):
     except Exception as e:
         print(f"TuxD-Win: update check failed: {e!r}")
         return None, None, None, None
+    _RELEASE_SEEN[feed_tag] = _release_update(release)
+    return _RELEASE_SEEN[feed_tag]
 
+
+def _release_update(release):
     tag = str(release.get("tag_name") or "").lstrip("v")
     if not tag or not _is_newer(tag, VERSION):
         return None, None, None, None
