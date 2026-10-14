@@ -1,5 +1,6 @@
 import asyncio
 import json
+import queue
 import ssl
 import sys
 import threading
@@ -73,6 +74,7 @@ class HADirectBase:
         self._interactive = self._use_color
 
         self._state_topic_to_name = {}
+        self._cmd_queue = None
         self._known_discovery_topics = set()
         self._stop_event = threading.Event()
         self._broker_lost = False
@@ -222,6 +224,24 @@ class HADirectBase:
         except asyncio.CancelledError:
             pass
 
+    def _queue_command(self, key, payload):
+        if self._cmd_queue is None:
+            self._cmd_queue = queue.Queue()
+            threading.Thread(target=self._command_worker, daemon=True).start()
+        self._cmd_queue.put((key, payload))
+
+    def _command_worker(self):
+        while True:
+            key, payload = self._cmd_queue.get()
+            self._dispatch_command(key, payload)
+
+    def _dispatch_command(self, key, payload):
+        try:
+            self.on_message(None, None, _IncomingMsg(key, payload))
+        except Exception as e:
+            if self.tty_output:
+                print(self._gray(f"Direct: on_message failed for {key}: {e!r}"))
+
     def _handle_incoming(self, raw):
         try:
             msg = json.loads(raw)
@@ -230,11 +250,10 @@ class HADirectBase:
         if msg.get("type") == "command":
             key = msg.get("key", "")
             payload = msg.get("payload", "")
-            try:
-                self.on_message(None, None, _IncomingMsg(key, payload))
-            except Exception as e:
-                if self.tty_output:
-                    print(self._gray(f"Direct: on_message failed for {key}: {e!r}"))
+            if "/config/" in key:
+                threading.Thread(target=self._dispatch_command, args=(key, payload), daemon=True).start()
+            else:
+                self._queue_command(key, payload)
         elif msg.get("type") == "ping":
             self._send_nowait({"type": "pong"})
 
