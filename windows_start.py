@@ -261,7 +261,7 @@ class TuxDWinAgent(
             self.handle_self_update_check()
         elif topic == f"{self.base_topic}/self_update/install_from_url/set":
             self.handle_self_update_install_from_url(payload)
-        elif topic == f"{self.base_topic}/config/get" or topic == f"{self.base_topic}/config/set":
+        elif topic.startswith(f"{self.base_topic}/config/"):
             self.handle_config_request(payload)
 
     def start(self):

@@ -1,19 +1,47 @@
 import os
 import json
+import re
 import tempfile
+import time
 import yaml
+
+from .password import is_password_hash, verify_password
 
 _CONFIG_FILE = "tuxd-win.conf"
 
 
 class ConfigAgentMixin:
 
+    def password_check(self, given):
+        stored = str((self.config.get("device", {}) or {}).get("password_hash") or "")
+        if not stored:
+            return None
+        if not given:
+            return "required"
+        if verify_password(given, stored):
+            return None
+        time.sleep(1.0)
+        return "incorrect"
+
     def handle_config_request(self, payload):
         try:
             request = json.loads(payload or "{}")
             request_id = str(request.get("request_id") or "")
             action = request.get("action")
-            if not request_id or action not in ("get", "set"):
+            if not request_id or action not in ("get", "set", "set_password"):
+                return
+
+            denied = self.password_check(request.get("password"))
+            if denied:
+                self._send_config_response(
+                    request_id, False, auth=denied,
+                    error="Incorrect password" if denied == "incorrect" else "Password required",
+                )
+                return
+
+            if action == "set_password":
+                self._set_password_hash(str(request.get("content") or ""))
+                self._send_config_response(request_id, True)
                 return
 
             if action == "get":
@@ -61,7 +89,22 @@ class ConfigAgentMixin:
                 pass
             self._send_config_response(request_id, False, error=str(e))
 
-    def _send_config_response(self, request_id, ok, content=None, error=None):
+    def _set_password_hash(self, password_hash):
+        if password_hash and not is_password_hash(password_hash):
+            raise ValueError("Not a password hash")
+        with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+            text = f.read()
+        line = f'  password_hash: "{password_hash}"'
+        if re.search(r"^  password_hash:.*$", text, flags=re.M):
+            text = re.sub(r"^  password_hash:.*$", lambda _m: line, text, count=1, flags=re.M)
+        else:
+            text = re.sub(r"^device:[ \t]*$", lambda m: m.group(0) + "\n" + line, text, count=1, flags=re.M)
+        with open(_CONFIG_FILE, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        self._config_own_write_mtime = os.path.getmtime(_CONFIG_FILE)
+        self.config.setdefault("device", {})["password_hash"] = password_hash
+
+    def _send_config_response(self, request_id, ok, content=None, error=None, auth=None):
         sender = getattr(self, "_send_wait", None)
         if not callable(sender):
             return
@@ -70,6 +113,8 @@ class ConfigAgentMixin:
             message["content"] = content
         if error:
             message["error"] = error[:500]
+        if auth:
+            message["auth"] = auth
         sender(message, timeout=5.0)
 
     def config_file_watch_loop(self):
@@ -87,4 +132,5 @@ class ConfigAgentMixin:
             current = _mtime()
             if current is not None and current != last:
                 last = current
-                self._hard_restart()
+                if current != getattr(self, "_config_own_write_mtime", None):
+                    self._hard_restart()
