@@ -1,3 +1,4 @@
+import base64
 import re
 import subprocess
 
@@ -44,9 +45,10 @@ def run_cmd(cmd: str, env=None):
 
 
 def run_powershell(script: str, timeout=30):
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
     try:
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
             capture_output=True,
             text=True,
             errors="replace",

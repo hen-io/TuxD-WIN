@@ -20,15 +20,28 @@ _UPDATE_INSTALL_SCRIPT = "\n".join([
     "$ErrorActionPreference = 'Stop'",
     "try {",
     "  $s = New-Object -ComObject Microsoft.Update.Session",
+    "  $s.ClientApplicationID = 'TuxD-Win'",
     "  $r = $s.CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0')",
-    "  if ($r.Updates.Count -eq 0) { Write-Output 'RESULT:2'; Write-Output 'REBOOT:False'; exit 0 }",
     "  $c = New-Object -ComObject Microsoft.Update.UpdateColl",
-    "  foreach ($u in $r.Updates) { if (-not $u.EulaAccepted) { $u.AcceptEula() }; [void]$c.Add($u) }",
-    "  $d = $s.CreateUpdateDownloader(); $d.Updates = $c; [void]$d.Download()",
-    "  $i = $s.CreateUpdateInstaller(); $i.Updates = $c; $res = $i.Install()",
-    "  Write-Output ('RESULT:' + $res.ResultCode)",
-    "  Write-Output ('REBOOT:' + $res.RebootRequired)",
-    "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
+    "  $skipped = 0",
+    "  foreach ($u in $r.Updates) {",
+    "    if ($u.InstallationBehavior.CanRequestUserInput) { $skipped++; continue }",
+    "    if (-not $u.EulaAccepted) { $u.AcceptEula() }",
+    "    [void]$c.Add($u)",
+    "  }",
+    "  Write-Output ('SKIPPED:' + $skipped)",
+    "  if ($c.Count -gt 0) {",
+    "    $d = $s.CreateUpdateDownloader(); $d.Updates = $c; [void]$d.Download()",
+    "    $i = $s.CreateUpdateInstaller(); $i.Updates = $c; $i.ForceQuiet = $true; $i.AllowSourcePrompts = $false",
+    "    $res = $i.Install()",
+    "    Write-Output ('RESULT:' + $res.ResultCode)",
+    "    for ($n = 0; $n -lt $c.Count; $n++) {",
+    "      if ($res.GetUpdateResult($n).ResultCode -gt 3) { Write-Output ('FAILED:' + ($c.Item($n).Title -replace '[^\\x20-\\x7E]', '?')) }",
+    "    }",
+    "  } else { Write-Output 'RESULT:2' }",
+    "  $pending = (New-Object -ComObject Microsoft.Update.SystemInfo).RebootRequired",
+    "  Write-Output ('REBOOT:' + ($pending -or ($c.Count -gt 0 -and $res.RebootRequired)))",
+    "} catch { Write-Output ('ERR:' + $_.Exception.Message + ' (0x' + ('{0:X8}' -f $_.Exception.HResult) + ')') }",
 ])
 
 
@@ -41,7 +54,7 @@ class HostUpdateMixin:
         suffix = cfg.get("updates_suffix")
         self._host_update_suffix = " oppdateringer tilgjengelig" if suffix is None else str(suffix)
         self._host_update_allow_install = bool(cfg.get("allow_install", True))
-        self._host_update_auto_reboot = bool(cfg.get("auto_reboot", False))
+        self._host_update_reboot = str(cfg.get("reboot_after_install") or "if_needed").strip().lower() != "never"
         ignore = cfg.get("ignore_titles") or []
         if isinstance(ignore, str):
             ignore = [ignore]
@@ -114,25 +127,31 @@ class HostUpdateMixin:
         try:
             with self.busy("Windows Update: installing"):
                 output = run_powershell(_UPDATE_INSTALL_SCRIPT, timeout=7200)
-            fields = {}
+            fields, failed = {}, []
             for line in output.splitlines():
                 key, _, value = line.strip().partition(":")
-                if key in ("RESULT", "REBOOT", "ERR"):
+                if key == "FAILED":
+                    failed.append(value.strip())
+                elif key in ("RESULT", "REBOOT", "ERR", "SKIPPED"):
                     fields[key] = value.strip()
+            print(f"TuxD-Win: Windows Update install output: {output[:1000]}")
+            reboot = fields.get("REBOOT") == "True"
             if "ERR" in fields:
                 self._host_update_note = f"Install failed: {fields['ERR'][:200]}"
             elif fields.get("RESULT") in ("2", "3"):
-                reboot = fields.get("REBOOT") == "True"
-                if fields["RESULT"] == "3":
-                    self._host_update_note = "Some updates installed with errors."
+                if fields["RESULT"] == "3" or failed:
+                    self._host_update_note = "Some updates did not install: " + "; ".join(failed)[:200]
             else:
                 self._host_update_note = f"Install did not complete (result {fields.get('RESULT', output.strip()[:100] or 'none')})."
+            if fields.get("SKIPPED", "0") not in ("", "0"):
+                self._host_update_note = (self._host_update_note + " " if self._host_update_note else "") + (
+                    f"{fields['SKIPPED']} update(s) need someone at the server and were left out.")
         except Exception as e:
             self._host_update_note = f"Install failed: {e!r}"[:200]
         print(f"TuxD-Win: Windows update install finished. {self._host_update_note}".strip())
 
         if reboot:
-            if self._host_update_auto_reboot:
+            if self._host_update_reboot:
                 self._host_update_note = "Restarting to finish installing updates."
                 try:
                     subprocess.run(["shutdown", "/r", "/t", "60", "/c", "TuxD-Win: restarting to finish Windows updates"], timeout=30)

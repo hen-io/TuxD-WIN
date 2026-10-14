@@ -89,6 +89,23 @@ def _first_edit(user, tpl, u_range, t_range, indent, path, tpl_data, user_data, 
     return None
 
 
+_RETIRED = (("host_update", "auto_reboot"),)
+
+
+def _remove_retired(user, log):
+    for section, key in _RETIRED:
+        for name, _c, k, end, _inline in _entries(user, 0, len(user), 0):
+            if name != section:
+                continue
+            child = next((len(line) - len(line.lstrip()) for line in user[k + 1:end]
+                          if line.strip() and not line.strip().startswith("#")), 2)
+            for cname, cc, _ck, cend, _ in _entries(user, k + 1, end, child):
+                if cname == key:
+                    log.append(f"removed {section}.{key}")
+                    return user[:cc] + user[cend:]
+    return None
+
+
 def sync_config(conf_path, template_path):
     conf_path, template_path = str(conf_path), str(template_path)
     with open(conf_path, "r", encoding="utf-8") as f:
@@ -101,6 +118,11 @@ def sync_config(conf_path, template_path):
     if tpl_data is None or _load(user) is None:
         return []
     log = []
+    while True:
+        removed = _remove_retired(user, log)
+        if removed is None:
+            break
+        user = removed
     for _ in range(500):
         edit = _first_edit(user, tpl, (0, len(user)), (0, len(tpl)), 0, [], tpl_data, _load(user), log)
         if edit is None:
