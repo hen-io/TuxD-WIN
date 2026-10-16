@@ -2,12 +2,14 @@ import os
 import json
 import re
 import tempfile
+import threading
 import time
 import yaml
 
 from .password import is_password_hash, verify_password
 
 _CONFIG_FILE = "tuxd-win.conf"
+_GUESS_LOCK = threading.Lock()
 
 
 class ConfigAgentMixin:
@@ -20,7 +22,8 @@ class ConfigAgentMixin:
             return "required"
         if verify_password(given, stored):
             return None
-        time.sleep(1.0)
+        with _GUESS_LOCK:
+            time.sleep(1.0)
         return "incorrect"
 
     def handle_config_request(self, payload):
@@ -97,8 +100,10 @@ class ConfigAgentMixin:
         line = f'  password_hash: "{password_hash}"'
         if re.search(r"^  password_hash:.*$", text, flags=re.M):
             text = re.sub(r"^  password_hash:.*$", lambda _m: line, text, count=1, flags=re.M)
+        elif re.search(r"^device:[ \t]*(#.*)?$", text, flags=re.M):
+            text = re.sub(r"^device:[ \t]*(#.*)?$", lambda m: m.group(0) + "\n" + line, text, count=1, flags=re.M)
         else:
-            text = re.sub(r"^device:[ \t]*$", lambda m: m.group(0) + "\n" + line, text, count=1, flags=re.M)
+            raise ValueError("No device: section in tuxd-win.conf")
         with open(_CONFIG_FILE, "w", encoding="utf-8", newline="") as f:
             f.write(text)
         self._config_own_write_mtime = os.path.getmtime(_CONFIG_FILE)
