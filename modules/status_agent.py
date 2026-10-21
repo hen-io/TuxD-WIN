@@ -1,5 +1,42 @@
+import json
 import threading
 from contextlib import contextmanager
+
+
+class ProblemsMixin:
+
+    def init_problems(self):
+        self._problems = {"warning": {}, "error": {}}
+
+    def register_problems(self):
+        for level, name, icon in (("error", "Error", "mdi:alert-circle"), ("warning", "Warning", "mdi:alert")):
+            self._binary_sensor_discovery(
+                f"system_{level}", name, f"{self.base_topic}/{level}",
+                device_class="problem" if level == "error" else None, icon=icon,
+                attributes_topic=f"{self.base_topic}/{level}_attributes", entity_category="diagnostic",
+            )
+            self._sensor_discovery(
+                f"system_{level}_reason", f"{name} Reason", f"{self.base_topic}/{level}_reason",
+                icon=f"{icon}-outline", entity_category="diagnostic",
+            )
+            self._publish_problem(level)
+
+    def set_standing(self, level, key, reason):
+        current = self._problems[level]
+        if current.get(key, "") == (reason or ""):
+            return
+        if reason:
+            current[key] = reason
+        else:
+            current.pop(key, None)
+        self._publish_problem(level)
+
+    def _publish_problem(self, level):
+        sources = dict(self._problems[level])
+        reason = "; ".join(sources.values())
+        self.publish(f"{self.base_topic}/{level}", "ON" if sources else "OFF")
+        self.publish(f"{self.base_topic}/{level}_attributes", json.dumps({"reason": reason, "sources": sources}))
+        self.publish(f"{self.base_topic}/{level}_reason", reason)
 
 
 class BusyMixin:

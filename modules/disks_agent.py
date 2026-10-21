@@ -103,6 +103,9 @@ class DisksMixin:
                         f"{base}/used_space",
                         round(usage.used / usage.total * 100, 2) if usage.total else 0,
                     )
+                    if name == "root" and hasattr(self, "set_standing"):
+                        full = bool(usage.total) and round(usage.used / usage.total * 100, 1) >= 100
+                        self.set_standing("error", "root_full", "Root storage is full" if full else "")
                 used_gb = total_used / gb
                 free_gb = (total_size - total_used) / gb
                 used_pct = (total_used / total_size * 100) if total_size else 0

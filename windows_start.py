@@ -12,7 +12,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = "0.2.25"
+VERSION = "0.3.0"
 GITHUB_REPO = "hen-io/TuxD-WIN"
 CONFIG_FILE = "tuxd-win.conf"
 
@@ -113,7 +113,7 @@ from modules.restart import RestartMixin
 from modules.config_agent import ConfigAgentMixin
 from modules.self_update_agent import SelfUpdateMixin
 from modules.system_agent import SystemMetricsMixin
-from modules.status_agent import BusyMixin
+from modules.status_agent import BusyMixin, ProblemsMixin
 from modules.network_agent import NetworkMixin
 from modules.disks_agent import DisksMixin
 from modules.services_agent import ServicesMixin
@@ -127,6 +127,7 @@ class TuxDWinAgent(
     SelfUpdateMixin,
     SystemMetricsMixin,
     BusyMixin,
+    ProblemsMixin,
     NetworkMixin,
     DisksMixin,
     ServicesMixin,
@@ -139,6 +140,7 @@ class TuxDWinAgent(
         self._update_applier = update_applier
         self.init_system_metrics()
         self.init_busy()
+        self.init_problems()
         self.init_network()
         self.init_disks()
         self.init_services()
@@ -229,6 +231,7 @@ class TuxDWinAgent(
             self.register_restart_button,
             self.register_system_metrics,
             self.register_busy,
+            self.register_problems,
             self.register_network,
             self.register_disks,
             self.register_services,
